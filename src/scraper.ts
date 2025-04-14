@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer-core";
+import puppeteer from "puppeteer";
 import { Cat } from "./models/cat";
 
 const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
@@ -9,7 +9,16 @@ export type RawCatResponse = Omit<Cat, "age"> & { age: string };
 
 export const fetchCats = async (): Promise<RawCatResponse[]> => {
   const browser = await puppeteer.launch({
-    executablePath: EDGE,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process",
+      "--disable-gpu",
+    ],
     headless: true,
   });
 
