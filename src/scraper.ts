@@ -18,12 +18,14 @@ export const fetchCats = async (): Promise<RawCatResponse[]> => {
       "--no-zygote",
       "--single-process",
       "--disable-gpu",
+      "--js-flags=--max-old-space-size=256",
     ],
     headless: true,
   });
 
   const page = await browser.newPage();
-  await page.goto(THS_ADOPT_CATS_URL, { waitUntil: "networkidle0" });
+  await page.goto(THS_ADOPT_CATS_URL, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".card_sect", { timeout: 60000 });
 
   const cats = await page.evaluate(() => {
     const results: RawCatResponse[] = [];
