@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer";
+import playwright from "playwright-core";
 import { Cat } from "./models/cat";
 
 const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
@@ -8,24 +8,34 @@ const THS_ADOPT_CATS_URL = `${THS_BASE_URL}/adoption-and-rehoming/adopt/cats/`;
 export type RawCatResponse = Omit<Cat, "age"> & { age: string };
 
 export const fetchCats = async (): Promise<RawCatResponse[]> => {
-  const browser = await puppeteer.launch({
+  const browser = await playwright.chromium.launch({
+    headless: true,
+    executablePath: "/usr/bin/chromium-browser",
     args: [
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
       "--no-sandbox",
       "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-accelerated-2d-canvas",
+      "--disable-extensions",
+      "--disable-background-networking",
+      "--disable-sync",
+      "--metrics-recording-only",
+      "--mute-audio",
+      "--no-default-browser-check",
       "--no-first-run",
-      "--no-zygote",
-      "--single-process",
-      "--disable-gpu",
-      "--js-flags=--max-old-space-size=256",
+      "--disable-default-apps",
+      "--disable-popup-blocking",
+      "--disable-translate",
+      "--hide-scrollbars",
+      "--disable-notifications",
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
+      "--disable-device-discovery-notifications",
     ],
-    headless: true,
   });
 
   const page = await browser.newPage();
-  await page.goto(THS_ADOPT_CATS_URL, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".card_sect", { timeout: 60000 });
+  await page.goto(THS_ADOPT_CATS_URL, { waitUntil: "networkidle" });
 
   const cats = await page.evaluate(() => {
     const results: RawCatResponse[] = [];
