@@ -1,73 +1,99 @@
-import playwright from "playwright-core";
+import puppeteer from "puppeteer-core";
 import { Cat } from "./models/cat";
 
-const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const THS_BASE_URL = "https://www.torontohumanesociety.com";
 const THS_ADOPT_CATS_URL = `${THS_BASE_URL}/adoption-and-rehoming/adopt/cats/`;
+const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 
 export type RawCatResponse = Omit<Cat, "age"> & { age: string };
 
 export const fetchCats = async (): Promise<RawCatResponse[]> => {
-  const browser = await playwright.chromium.launch({
-    headless: true,
-    executablePath: "/usr/bin/chromium-browser",
+  // Launch browser with minimal options
+  const browser = await puppeteer.launch({
+    headless: true, // Using the new headless mode for better performance
+    executablePath: EDGE,
     args: [
       "--disable-dev-shm-usage",
       "--disable-gpu",
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-extensions",
-      "--disable-background-networking",
-      "--disable-sync",
-      "--metrics-recording-only",
-      "--mute-audio",
-      "--no-default-browser-check",
-      "--no-first-run",
-      "--disable-default-apps",
-      "--disable-popup-blocking",
-      "--disable-translate",
-      "--hide-scrollbars",
-      "--disable-notifications",
-      "--disable-background-timer-throttling",
-      "--disable-renderer-backgrounding",
-      "--disable-device-discovery-notifications",
     ],
   });
 
-  const page = await browser.newPage();
-  await page.goto(THS_ADOPT_CATS_URL, { waitUntil: "networkidle" });
+  try {
+    const page = await browser.newPage();
 
-  const cats = await page.evaluate(() => {
-    const results: RawCatResponse[] = [];
-    const catCards = document.querySelectorAll(".card_sect");
-    for (const card of catCards) {
-      const link = card.querySelector("a")?.getAttribute("href");
-      const pfp = card.querySelector("a > img")?.getAttribute("src");
-      const nameElement = card.querySelector("h2");
-      const name = nameElement?.textContent?.trim() ?? "";
-      const details = card.querySelectorAll(".detail > p");
-      const detailText = [...details].map((x) => x.textContent?.trim() ?? "");
-      const onHold = detailText[4].includes("Yes");
-      if (onHold) continue;
+    // Configure browser for speed, but allow all image requests
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      const resourceType = request.resourceType();
+      // Allow document, scripts, XHR, fetch, and ALL images
+      if (
+        ["document", "xhr", "fetch", "script", "image"].includes(resourceType)
+      ) {
+        request.continue();
+      } else {
+        // Block CSS, fonts, and other non-essential resources
+        request.abort();
+      }
+    });
 
-      const gender = detailText[0].replace("Gender : ", "") as
-        | "Male"
-        | "Female";
-      const breed = detailText[2].replace("Breed : ", "");
-      const age = detailText[3].replace("Age : ", "");
+    // Disable CSS and font parsing
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    );
+    await page.setCacheEnabled(false);
 
-      results.push({
-        name,
-        url: link,
-        gender,
-        breed,
-        age,
-        pfp,
-      } as RawCatResponse);
-    }
+    // Navigate with minimal wait strategy
+    await page.goto(THS_ADOPT_CATS_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: 20000,
+    });
 
-    return results;
-  });
+    // Wait only for the essential elements
+    await page.waitForSelector(".card_sect", { timeout: 10000 });
 
-  return cats;
+    // Extract data using direct selectors for better performance
+    const cats = await page.evaluate(() => {
+      const results: RawCatResponse[] = [];
+      const catCards = document.querySelectorAll(".card_sect");
+
+      for (const card of catCards) {
+        const link = card.querySelector("a")?.getAttribute("href");
+        const pfp = card.querySelector("a > img")?.getAttribute("src");
+        const name = card.querySelector("h2")?.textContent?.trim() || "";
+
+        // Direct selector lookups
+        const details = card.querySelectorAll(".detail > p");
+
+        // Skip processing if the card doesn't have the expected structure
+        if (details.length < 5) continue;
+
+        const onHoldText = details[4].textContent || "";
+        if (onHoldText.includes("Yes")) continue;
+
+        const gender = (details[0].textContent || "").replace(
+          "Gender : ",
+          ""
+        ) as "Male" | "Female";
+        const breed = (details[2].textContent || "").replace("Breed : ", "");
+        const age = (details[3].textContent || "").replace("Age : ", "");
+
+        results.push({
+          name,
+          url: link ?? "",
+          gender,
+          breed,
+          age,
+          pfp: pfp ?? "",
+        });
+      }
+      return results;
+    });
+
+    return cats;
+  } finally {
+    await browser.close();
+  }
 };

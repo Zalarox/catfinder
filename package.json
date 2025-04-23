@@ -14,7 +14,7 @@
   "dependencies": {
     "discord.js": "^14.18.0",
     "dotenv": "^16.5.0",
-    "playwright-core": "^1.51.1"
+    "puppeteer-core": "^24.7.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",
