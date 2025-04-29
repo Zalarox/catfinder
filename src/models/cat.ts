@@ -1,6 +1,7 @@
 export type Cat = {
   name: string;
   age: number;
+  description: string | undefined;
   breed: string;
   gender: "Male" | "Female";
   url: string;

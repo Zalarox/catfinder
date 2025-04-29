@@ -8,9 +8,8 @@ const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 export type RawCatResponse = Omit<Cat, "age"> & { age: string };
 
 export const fetchCats = async (): Promise<RawCatResponse[]> => {
-  // Launch browser with minimal options
   const browser = await puppeteer.launch({
-    headless: true, // Using the new headless mode for better performance
+    headless: true,
     executablePath: EDGE,
     args: [
       "--disable-dev-shm-usage",
@@ -24,11 +23,9 @@ export const fetchCats = async (): Promise<RawCatResponse[]> => {
   try {
     const page = await browser.newPage();
 
-    // Configure browser for speed, but allow all image requests
     await page.setRequestInterception(true);
     page.on("request", (request) => {
       const resourceType = request.resourceType();
-      // Allow document, scripts, XHR, fetch, and ALL images
       if (
         ["document", "xhr", "fetch", "script", "image"].includes(resourceType)
       ) {
@@ -39,7 +36,6 @@ export const fetchCats = async (): Promise<RawCatResponse[]> => {
       }
     });
 
-    // Disable CSS and font parsing
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     );
@@ -54,9 +50,8 @@ export const fetchCats = async (): Promise<RawCatResponse[]> => {
     // Wait only for the essential elements
     await page.waitForSelector(".card_sect", { timeout: 10000 });
 
-    // Extract data using direct selectors for better performance
     const cats = await page.evaluate(() => {
-      const results: RawCatResponse[] = [];
+      const results = [];
       const catCards = document.querySelectorAll(".card_sect");
 
       for (const card of catCards) {
@@ -64,10 +59,7 @@ export const fetchCats = async (): Promise<RawCatResponse[]> => {
         const pfp = card.querySelector("a > img")?.getAttribute("src");
         const name = card.querySelector("h2")?.textContent?.trim() || "";
 
-        // Direct selector lookups
         const details = card.querySelectorAll(".detail > p");
-
-        // Skip processing if the card doesn't have the expected structure
         if (details.length < 5) continue;
 
         const onHoldText = details[4].textContent || "";
@@ -86,13 +78,25 @@ export const fetchCats = async (): Promise<RawCatResponse[]> => {
           gender,
           breed,
           age,
+          description: "",
           pfp: pfp ?? "",
         });
       }
       return results;
     });
 
-    return cats;
+    for (const cat of cats) {
+      await page.goto(cat.url, {
+        waitUntil: "domcontentloaded",
+        timeout: 20000,
+      });
+
+      cat.description = await page.evaluate(
+        () => document.querySelector(".pet-content")?.textContent?.trim() ?? ""
+      );
+    }
+
+    return cats as RawCatResponse[];
   } finally {
     await browser.close();
   }

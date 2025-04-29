@@ -13,14 +13,11 @@ import { CustomCommand } from "../../models/command";
 import { fetchCats } from "../../scraper";
 import { Cat, parseAgeToYears } from "../../models/cat";
 
-/**
- * Creates an embed for displaying cat information
- */
 const getCatEmbed = (cat: Cat, index: number, total: number): EmbedBuilder => {
   return new EmbedBuilder()
     .setTitle(cat.name)
     .setDescription(
-      `**Breed:** ${cat.breed}\n**Age:** ${cat.age} years\n**Gender:** ${cat.gender}\n`
+      `**Breed:** ${cat.breed}\n**Age:** ${cat.age} years\n**Gender:** ${cat.gender}\n\n**Description**:\n${cat.description}\n`
     )
     .setURL(cat.url)
     .setImage(cat.pfp)
@@ -29,9 +26,6 @@ const getCatEmbed = (cat: Cat, index: number, total: number): EmbedBuilder => {
     .setTimestamp();
 };
 
-/**
- * Handles the interactive cat viewer with pagination
- */
 export const handleCatViewer = async (
   interaction: ChatInputCommandInteraction,
   cats: Cat[]
@@ -52,12 +46,7 @@ export const handleCatViewer = async (
         .setLabel("Next")
         .setEmoji("➡️")
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(index === cats.length - 1),
-      new ButtonBuilder()
-        .setCustomId("refresh_cats")
-        .setLabel("Refresh")
-        .setEmoji("🔄")
-        .setStyle(ButtonStyle.Success)
+        .setDisabled(index === cats.length - 1)
     );
   };
 
@@ -73,19 +62,15 @@ export const handleCatViewer = async (
     components: [getButtonRow(currentIndex)],
   });
 
-  // Create a collector that listens for button interactions
   const collector =
     message.createMessageComponentCollector<ComponentType.Button>({
       time: 300_000, // 5 minute timeout
-      filter: (i) => i.user.id === interaction.user.id, // Only listen to command invoker
     });
 
-  // Handle button interactions
   collector.on("collect", async (buttonInteraction: ButtonInteraction) => {
     // Defer the update to avoid interaction timeouts
     await buttonInteraction.deferUpdate();
 
-    // Handle different button actions
     switch (buttonInteraction.customId) {
       case "next_cat":
         currentIndex = Math.min(currentIndex + 1, cats.length - 1);
@@ -93,13 +78,8 @@ export const handleCatViewer = async (
       case "prev_cat":
         currentIndex = Math.max(currentIndex - 1, 0);
         break;
-      case "refresh_cats":
-        // Refresh logic - can be expanded to re-fetch cats if needed
-        // For now just refreshes the current view
-        break;
     }
 
-    // Update the message with new content
     const newEmbed = getCatEmbed(cats[currentIndex], currentIndex, cats.length);
 
     await interaction.editReply({
@@ -123,12 +103,6 @@ export const handleCatViewer = async (
         .setLabel("Next")
         .setEmoji("➡️")
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true),
-      new ButtonBuilder()
-        .setCustomId("refresh_cats")
-        .setLabel("Refresh")
-        .setEmoji("🔄")
-        .setStyle(ButtonStyle.Secondary)
         .setDisabled(true)
     );
 
@@ -143,9 +117,6 @@ export const handleCatViewer = async (
   });
 };
 
-/**
- * The cats command implementation
- */
 export const cats: CustomCommand = {
   data: new SlashCommandBuilder()
     .setName("cats")
@@ -166,9 +137,7 @@ export const cats: CustomCommand = {
 
     try {
       // Show a loading message
-      await interaction.editReply(
-        "🔍 Searching for adoptable cats... Please wait!"
-      );
+      await interaction.editReply("🔍 Searching...");
 
       // Get the maximum age from options, default to 4 if not provided
       const maxAge = interaction.options.getInteger("max_age") || 4;
@@ -179,8 +148,7 @@ export const cats: CustomCommand = {
         .map(
           (rawCat) => ({ ...rawCat, age: parseAgeToYears(rawCat.age) } as Cat)
         )
-        .filter((cat) => cat.age < maxAge)
-        .sort((a, b) => a.age - b.age); // Sort by age, youngest first
+        .filter((cat) => cat.age < maxAge);
 
       // Handle no cats found
       if (cats.length === 0) {
@@ -189,14 +157,12 @@ export const cats: CustomCommand = {
           embeds: [],
           components: [],
         });
+      } else {
+        interaction.editReply(`Found ${cats.length}...`);
+        await handleCatViewer(interaction, cats);
       }
-
-      // Start the interactive cat viewer
-      await handleCatViewer(interaction, cats);
     } catch (error) {
       console.error("Error in cats command:", error);
-
-      // Provide a user-friendly error message
       await interaction.editReply({
         content:
           "❌ Something went wrong while fetching cats. Please try again later.",
