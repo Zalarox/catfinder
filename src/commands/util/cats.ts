@@ -1,127 +1,26 @@
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ChatInputCommandInteraction,
-  ComponentType,
-  EmbedBuilder,
-  SlashCommandBuilder,
-  ButtonInteraction,
-  Colors,
-} from "discord.js";
+import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import { CustomCommand } from "../../models/command";
-import { fetchCats } from "../../scraper";
-import { Cat, parseAgeToYears } from "../../models/cat";
-
-const getCatEmbed = (cat: Cat, index: number, total: number): EmbedBuilder => {
-  return new EmbedBuilder()
-    .setTitle(cat.name)
-    .setDescription(
-      `**Breed:** ${cat.breed}\n**Age:** ${cat.age} years\n**Gender:** ${cat.gender}\n\n**Description**:\n${cat.description}\n`
-    )
-    .setURL(cat.url)
-    .setImage(cat.pfp)
-    .setFooter({ text: `Cat ${index + 1} of ${total}` })
-    .setColor(Colors.Fuchsia)
-    .setTimestamp();
-};
-
-export const handleCatViewer = async (
-  interaction: ChatInputCommandInteraction,
-  cats: Cat[]
-): Promise<void> => {
-  let currentIndex = 0;
-
-  // Create navigation buttons
-  const getButtonRow = (index: number) => {
-    return new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId("prev_cat")
-        .setLabel("Previous")
-        .setEmoji("⬅️")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(index === 0),
-      new ButtonBuilder()
-        .setCustomId("next_cat")
-        .setLabel("Next")
-        .setEmoji("➡️")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(index === cats.length - 1)
-    );
-  };
-
-  // Initial embed and buttons
-  const initialEmbed = getCatEmbed(
-    cats[currentIndex],
-    currentIndex,
-    cats.length
-  );
-
-  const message = await interaction.editReply({
-    embeds: [initialEmbed],
-    components: [getButtonRow(currentIndex)],
-  });
-
-  const collector =
-    message.createMessageComponentCollector<ComponentType.Button>({
-      time: 300_000, // 5 minute timeout
-    });
-
-  collector.on("collect", async (buttonInteraction: ButtonInteraction) => {
-    // Defer the update to avoid interaction timeouts
-    await buttonInteraction.deferUpdate();
-
-    switch (buttonInteraction.customId) {
-      case "next_cat":
-        currentIndex = Math.min(currentIndex + 1, cats.length - 1);
-        break;
-      case "prev_cat":
-        currentIndex = Math.max(currentIndex - 1, 0);
-        break;
-    }
-
-    const newEmbed = getCatEmbed(cats[currentIndex], currentIndex, cats.length);
-
-    await interaction.editReply({
-      embeds: [newEmbed],
-      components: [getButtonRow(currentIndex)],
-    });
-  });
-
-  // Handle collector end event (timeout)
-  collector.on("end", async (collected) => {
-    // Disable all buttons when the collector ends
-    const disabledRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId("prev_cat")
-        .setLabel("Previous")
-        .setEmoji("⬅️")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true),
-      new ButtonBuilder()
-        .setCustomId("next_cat")
-        .setLabel("Next")
-        .setEmoji("➡️")
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(true)
-    );
-
-    try {
-      await interaction.editReply({
-        components: [disabledRow],
-      });
-    } catch (error) {
-      // Ignore errors that might occur if the message is deleted
-      console.error("Failed to disable buttons:", error);
-    }
-  });
-};
+import { fetchTCRCats, fetchTHSCats } from "../../scraper";
+import {
+  Cat,
+  handleCatViewer,
+  parseAgeToYears,
+  ShallowCat,
+} from "../../models/cat";
 
 export const cats: CustomCommand = {
   data: new SlashCommandBuilder()
     .setName("cats")
-    .setDescription(
-      "Find adoptable cats from Toronto Humane Society under 4 years old"
+    .setDescription("Find adoptable cats from a shelter under 4 years old")
+    .addStringOption((option) =>
+      option
+        .setName("shelter")
+        .setDescription("Allows searching between THS and TCR")
+        .setRequired(false)
+        .addChoices(
+          { name: "ths", value: "ths" },
+          { name: "tcr", value: "tcr" }
+        )
     )
     .addIntegerOption((option) =>
       option
@@ -136,19 +35,23 @@ export const cats: CustomCommand = {
     await interaction.deferReply();
 
     try {
-      // Show a loading message
       await interaction.editReply("🔍 Searching...");
-
-      // Get the maximum age from options, default to 4 if not provided
       const maxAge = interaction.options.getInteger("max_age") || 4;
+      const shelter = interaction.options.getString("shelter") || "ths";
+      let cats: Cat[] | ShallowCat[] = [];
 
-      // Fetch and process cats
-      const rawCats = await fetchCats();
-      const cats = rawCats
-        .map(
-          (rawCat) => ({ ...rawCat, age: parseAgeToYears(rawCat.age) } as Cat)
-        )
-        .filter((cat) => cat.age < maxAge);
+      if (shelter === "ths") {
+        // Fetch and process THS cats
+        const rawCats = await fetchTHSCats();
+        cats = rawCats
+          .map(
+            (rawCat) => ({ ...rawCat, age: parseAgeToYears(rawCat.age) } as Cat)
+          )
+          .filter((cat) => cat.age < maxAge);
+      } else {
+        // Fetch and process TCR cats
+        cats = await fetchTCRCats();
+      }
 
       // Handle no cats found
       if (cats.length === 0) {
@@ -159,7 +62,18 @@ export const cats: CustomCommand = {
         });
       } else {
         interaction.editReply(`Found ${cats.length}...`);
-        await handleCatViewer(interaction, cats);
+
+        if (shelter === "ths")
+          await handleCatViewer(interaction, cats as Cat[]);
+        else
+          interaction.editReply(
+            `Cats:\n\n${cats
+              .map(
+                (cat, i) =>
+                  `${i}: ${cat.name} - ${cat.breed} [https://www.adoptapet.com/${cat.url}]`
+              )
+              .join("\n")}`
+          );
       }
     } catch (error) {
       console.error("Error in cats command:", error);

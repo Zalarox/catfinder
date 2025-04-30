@@ -1,13 +1,19 @@
 import puppeteer from "puppeteer-core";
-import { Cat } from "./models/cat";
+import { Cat, ShallowCat } from "./models/cat";
+import { parse } from "node-html-parser";
 
 const THS_BASE_URL = "https://www.torontohumanesociety.com";
+const getTCRUrl = (isBaby = true) =>
+  `https://searchtools.adoptapet.com/cgi-bin/searchtools.cgi/portable_pet_list?shelter_id=75215&size=450x600_gridnew&sort_by=age&clan_name=cat&age=${
+    isBaby ? "baby" : "young"
+  };is_ajax=1`;
 const THS_ADOPT_CATS_URL = `${THS_BASE_URL}/adoption-and-rehoming/adopt/cats/`;
 const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+const CHROMIUM_PATH = "/usr/bin/chromium-browser";
 
 export type RawCatResponse = Omit<Cat, "age"> & { age: string };
 
-export const fetchCats = async (): Promise<RawCatResponse[]> => {
+export const fetchTHSCats = async (): Promise<RawCatResponse[]> => {
   const browser = await puppeteer.launch({
     headless: true,
     executablePath: EDGE,
@@ -100,4 +106,21 @@ export const fetchCats = async (): Promise<RawCatResponse[]> => {
   } finally {
     await browser.close();
   }
+};
+
+export const fetchTCRCats = async (): Promise<ShallowCat[]> => {
+  const response = await fetch(getTCRUrl());
+  const html = await response.text();
+  const dom = parse(html);
+  const catElements = dom.querySelectorAll(".pet");
+  const cats: ShallowCat[] = [];
+
+  for (const catElement of catElements) {
+    const name = catElement.querySelector(".name")?.textContent ?? "";
+    const url = catElement.querySelector("a")?.getAttribute("href") ?? "";
+    const breed = catElement.querySelectorAll("p")[1].textContent ?? "";
+    cats.push({ name, url, breed });
+  }
+
+  return cats;
 };
