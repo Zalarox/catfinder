@@ -3,10 +3,8 @@ import { Cat, ShallowCat } from "./models/cat";
 import { parse } from "node-html-parser";
 
 const THS_BASE_URL = "https://www.torontohumanesociety.com";
-const getTCRUrl = (isBaby = true) =>
-  `https://searchtools.adoptapet.com/cgi-bin/searchtools.cgi/portable_pet_list?shelter_id=75215&size=450x600_gridnew&sort_by=age&clan_name=cat&age=${
-    isBaby ? "baby" : "young"
-  };is_ajax=1`;
+const getTCRUrl = (age: string) =>
+  `https://searchtools.adoptapet.com/cgi-bin/searchtools.cgi/portable_pet_list?shelter_id=75215&size=450x600_gridnew&sort_by=age&clan_name=cat&age=${age};is_ajax=1`;
 const THS_ADOPT_CATS_URL = `${THS_BASE_URL}/adoption-and-rehoming/adopt/cats/`;
 const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const CHROMIUM_PATH = "/usr/bin/chromium-browser";
@@ -92,14 +90,12 @@ export const fetchTHSCats = async (): Promise<RawCatResponse[]> => {
     });
 
     for (const cat of cats) {
-      await page.goto(cat.url, {
-        waitUntil: "domcontentloaded",
-        timeout: 20000,
-      });
-
-      cat.description = await page.evaluate(
-        () => document.querySelector(".pet-content")?.textContent?.trim() ?? ""
-      );
+      const response = await fetch(cat.url);
+      const html = await response.text();
+      const dom = parse(html);
+      const content = dom.querySelector(".pet-content");
+      content?.querySelectorAll("br").forEach((x) => x.replaceWith("\n"));
+      cat.description = content?.text ?? "";
     }
 
     return cats as RawCatResponse[];
@@ -108,8 +104,8 @@ export const fetchTHSCats = async (): Promise<RawCatResponse[]> => {
   }
 };
 
-export const fetchTCRCats = async (): Promise<ShallowCat[]> => {
-  const response = await fetch(getTCRUrl());
+export const fetchTCRCats = async (age: string): Promise<ShallowCat[]> => {
+  const response = await fetch(getTCRUrl(age));
   const html = await response.text();
   const dom = parse(html);
   const catElements = dom.querySelectorAll(".pet");
