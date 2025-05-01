@@ -21,7 +21,16 @@ export const fetchTHSCats = async (): Promise<RawCatResponse[]> => {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-extensions",
+      "--js-flags=--max-old-space-size=256",
+      "--single-process",
+      "--disable-software-rasterizer",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process",
+      "--disable-speech-api",
+      "--disable-canvas-aa",
+      "--disable-2d-canvas-clip-aa",
     ],
+    defaultViewport: { width: 800, height: 600 },
   });
 
   try {
@@ -52,7 +61,7 @@ export const fetchTHSCats = async (): Promise<RawCatResponse[]> => {
     });
 
     // Wait only for the essential elements
-    await page.waitForSelector(".card_sect", { timeout: 10000 });
+    await page.waitForSelector(".card_sect", { timeout: 30000 });
 
     const cats = await page.evaluate(() => {
       const results = [];
