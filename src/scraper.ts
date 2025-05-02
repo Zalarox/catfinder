@@ -1,4 +1,3 @@
-import puppeteer from "puppeteer-core";
 import { Cat, ShallowCat } from "./models/cat";
 import { parse } from "node-html-parser";
 
@@ -6,110 +5,73 @@ const THS_BASE_URL = "https://www.torontohumanesociety.com";
 const getTCRUrl = (age: string) =>
   `https://searchtools.adoptapet.com/cgi-bin/searchtools.cgi/portable_pet_list?shelter_id=75215&size=450x600_gridnew&sort_by=age&clan_name=cat&age=${age};is_ajax=1`;
 const THS_ADOPT_CATS_URL = `${THS_BASE_URL}/adoption-and-rehoming/adopt/cats/`;
-const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
-const CHROMIUM_PATH = "/usr/bin/chromium-browser";
 
 export type RawCatResponse = Omit<Cat, "age"> & { age: string };
 
 export const fetchTHSCats = async (): Promise<RawCatResponse[]> => {
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: EDGE,
-    args: [
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-extensions",
-      "--js-flags=--max-old-space-size=256",
-      "--single-process",
-      "--disable-software-rasterizer",
-      "--disable-blink-features=AutomationControlled",
-      "--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process",
-      "--disable-speech-api",
-      "--disable-canvas-aa",
-      "--disable-2d-canvas-clip-aa",
-    ],
-    defaultViewport: { width: 800, height: 600 },
-  });
-
   try {
-    const page = await browser.newPage();
+    const response = await fetch(THS_ADOPT_CATS_URL);
+    if (!response.ok) return [];
+    const html = await response.text();
+    const dom = parse(html);
+    const catCards = Array.from(dom.querySelectorAll(".card_sect"));
+    const eligibleCats: RawCatResponse[] = [];
 
-    await page.setRequestInterception(true);
-    page.on("request", (request) => {
-      const resourceType = request.resourceType();
-      if (
-        ["document", "xhr", "fetch", "script", "image"].includes(resourceType)
-      ) {
-        request.continue();
-      } else {
-        // Block CSS, fonts, and other non-essential resources
-        request.abort();
-      }
-    });
+    for (const card of catCards) {
+      const link = card.querySelector("a")?.getAttribute("href");
+      if (!link) continue;
 
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    );
-    await page.setCacheEnabled(false);
+      const pfp = card.querySelector("a > img")?.getAttribute("src") || "";
+      const name = card.querySelector("h2")?.textContent?.trim() || "";
+      const details = Array.from(card.querySelectorAll(".detail > p"));
+      if (details.length < 5) continue;
 
-    // Navigate with minimal wait strategy
-    await page.goto(THS_ADOPT_CATS_URL, {
-      waitUntil: "domcontentloaded",
-      timeout: 20000,
-    });
+      const onHoldText = details[4].textContent || "";
+      if (onHoldText.includes("Yes")) continue;
 
-    // Wait only for the essential elements
-    await page.waitForSelector(".card_sect", { timeout: 30000 });
+      const gender = (details[0].textContent || "").replace("Gender : ", "") as
+        | "Male"
+        | "Female";
+      const breed = (details[2].textContent || "").replace("Breed : ", "");
+      const age = (details[3].textContent || "").replace("Age : ", "");
 
-    const cats = await page.evaluate(() => {
-      const results = [];
-      const catCards = document.querySelectorAll(".card_sect");
-
-      for (const card of catCards) {
-        const link = card.querySelector("a")?.getAttribute("href");
-        const pfp = card.querySelector("a > img")?.getAttribute("src");
-        const name = card.querySelector("h2")?.textContent?.trim() || "";
-
-        const details = card.querySelectorAll(".detail > p");
-        if (details.length < 5) continue;
-
-        const onHoldText = details[4].textContent || "";
-        if (onHoldText.includes("Yes")) continue;
-
-        const gender = (details[0].textContent || "").replace(
-          "Gender : ",
-          ""
-        ) as "Male" | "Female";
-        const breed = (details[2].textContent || "").replace("Breed : ", "");
-        const age = (details[3].textContent || "").replace("Age : ", "");
-
-        results.push({
-          name,
-          url: link ?? "",
-          gender,
-          breed,
-          age,
-          description: "",
-          pfp: pfp ?? "",
-        });
-      }
-      return results;
-    });
-
-    for (const cat of cats) {
-      const response = await fetch(cat.url);
-      const html = await response.text();
-      const dom = parse(html);
-      const content = dom.querySelector(".pet-content");
-      content?.querySelectorAll("br").forEach((x) => x.replaceWith("\n"));
-      cat.description = content?.text ?? "";
+      eligibleCats.push({
+        name,
+        url: link,
+        gender,
+        breed,
+        age,
+        description: "",
+        pfp,
+      });
     }
 
-    return cats as RawCatResponse[];
-  } finally {
-    await browser.close();
+    const detailsPromises = eligibleCats.map(async (cat) => {
+      try {
+        const response = await fetch(cat.url);
+        if (!response.ok) return "";
+        const html = await response.text();
+        const dom = parse(html);
+        const content = dom.querySelector(".pet-content");
+        if (!content) return "";
+        content.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+        return content.text || "";
+      } catch (error) {
+        console.error(`Error fetching details for ${cat.name}:`, error);
+        return "";
+      }
+    });
+
+    const descriptions = await Promise.all(detailsPromises);
+
+    descriptions.forEach((description, index) => {
+      eligibleCats[index].description = description;
+    });
+
+    return eligibleCats;
+  } catch (error) {
+    console.error("Error fetching THS cats:", error);
+    return [];
   }
 };
 
