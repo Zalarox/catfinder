@@ -1,10 +1,19 @@
 import { Cat, ShallowCat } from "./models/cat";
 import { parse } from "node-html-parser";
+import { BANLIST_PATH } from "./utils";
+import fs from "fs";
 
 const THS_BASE_URL = "https://www.torontohumanesociety.com";
 const getTCRUrl = (age: string) =>
   `https://searchtools.adoptapet.com/cgi-bin/searchtools.cgi/portable_pet_list?shelter_id=75215&size=450x600_gridnew&sort_by=age&clan_name=cat&age=${age};is_ajax=1`;
 const THS_ADOPT_CATS_URL = `${THS_BASE_URL}/adoption-and-rehoming/adopt/cats/`;
+
+const checkBanList = (id: string) => {
+  if (!fs.existsSync(BANLIST_PATH)) return { ids: [] };
+  const raw = fs.readFileSync(BANLIST_PATH, "utf-8");
+  const banList = JSON.parse(raw);
+  return banList.ids.includes(id);
+};
 
 export type RawCatResponse = Omit<Cat, "age"> & { age: string };
 
@@ -84,6 +93,7 @@ export const fetchTCRCats = async (age: string): Promise<ShallowCat[]> => {
 
   for (const catElement of catElements) {
     const name = catElement.querySelector(".name")?.textContent ?? "";
+    if (name.includes("- CP")) continue;
     const url = catElement.querySelector("a")?.getAttribute("href") ?? "";
     const breed = catElement.querySelectorAll("p")[1].textContent ?? "";
     cats.push({ name, url, breed });

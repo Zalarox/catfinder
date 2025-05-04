@@ -25,6 +25,23 @@ export type ShallowCat = {
   breed: string;
 };
 
+export const extractPetId = (url: string) => {
+  // TCR URL... /pet/12345678-
+  let match = url.match(/\/pet\/(\d+)-/);
+  if (match) {
+    return match[1];
+  }
+
+  // THS URL... ?ID=12345678
+  const urlObj = new URL(url);
+  const idParam = urlObj.searchParams.get("ID");
+  if (idParam) {
+    return idParam;
+  }
+
+  return null;
+};
+
 export const parseAgeToYears = (ageText: string): number => {
   const yearsMatch = ageText.match(/(\d+)\s+Year/);
   const monthsMatch = ageText.match(/(\d+)\s+Month/);
